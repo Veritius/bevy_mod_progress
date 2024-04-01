@@ -38,6 +38,7 @@ impl<T: ProgressType> Default for ProgressTrackerPlugin<T> {
 
 impl<T: ProgressType> Plugin for ProgressTrackerPlugin<T> {
     fn build(&self, app: &mut App) {
+        app.init_schedule(Done::<T>::new());
         app.insert_resource(PluginConfig { remove_on_done: self.remove_on_done, phantom: PhantomData::<T> });
         app.insert_resource(OverallProgress(OverallProgressInner::default(), PhantomData::<T>));
         app.add_systems(self.check_schedule, schedule_check_system::<T>);
