@@ -40,7 +40,6 @@ impl<T: ProgressType> Plugin for ProgressTrackerPlugin<T> {
     fn build(&self, app: &mut App) {
         app.init_schedule(Done::<T>::new());
         app.insert_resource(PluginConfig { remove_on_done: self.remove_on_done, phantom: PhantomData::<T> });
-        app.insert_resource(OverallProgress(OverallProgressInner::default(), PhantomData::<T>));
         app.add_systems(self.check_schedule, schedule_check_system::<T>);
     }
 }
@@ -234,4 +233,11 @@ impl<S: IntoSystem<(), Progress, Params>, Params> ProgressTrackerSystem<Params> 
 /// Returns a [`Condition`]-satisfying closure that will return `true` if `T` is being tracked.
 pub fn currently_tracking<T: ProgressType>() -> impl Fn(Option<Res<OverallProgress<T>>>) -> bool + Clone {
     |res| { res.is_some() }
+}
+
+/// Adds [`OverallProgress<T>`] to the World, allowing it to be tracked.
+pub fn start_tracking<T: ProgressType>(
+    mut commands: Commands,
+) {
+    commands.insert_resource(OverallProgress::<T>::new());
 }
