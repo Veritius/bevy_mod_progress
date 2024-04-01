@@ -223,8 +223,7 @@ impl<S: IntoSystem<(), Progress, Params>, Params> ProgressTrackerSystem<Params> 
                 Some(overall) => {
                     progress.apply(&overall);
                 },
-                None => panic!("Tried to record progress, but OverallProgress<{}> wasn't in the World.",
-                    std::any::type_name::<T>()),
+                None => { return }, // Do nothing.
             }
         }).in_set(ProgressTrackingSet::<T>::new())
     }
@@ -240,4 +239,12 @@ pub fn start_tracking<T: ProgressType>(
     mut commands: Commands,
 ) {
     commands.insert_resource(OverallProgress::<T>::new());
+}
+
+
+/// Removes [`OverallProgress<T>`] to the World, stopping tracking.
+pub fn stop_tracking<T: ProgressType>(
+    mut commands: Commands,
+) {
+    commands.remove_resource::<OverallProgress<T>>();
 }
