@@ -229,3 +229,8 @@ impl<S: IntoSystem<(), Progress, Params>, Params> ProgressTrackerSystem<Params> 
         }).in_set(ProgressTrackingSet::<T>::new())
     }
 }
+
+/// Returns a [`Condition`]-satisfying closure that will return `true` if `T` is being tracked.
+pub fn currently_tracking<T: ProgressType>() -> impl Fn(Option<Res<OverallProgress<T>>>) -> bool + Clone {
+    |res| { res.is_some() }
+}

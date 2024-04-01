@@ -12,7 +12,7 @@ fn main() {
     app.add_plugins(DefaultPlugins);
     app.add_plugins(ProgressTrackerPlugin::<TrackerId>::default());
     app.add_systems(Update, tracking_system.track_progress::<TrackerId>()
-        .run_if(resource_exists::<OverallProgress<TrackerId>>));
+        .run_if(currently_tracking::<TrackerId>()));
     app.add_systems(Done::<TrackerId>::new(), finished_system);
     app.run();
 }
