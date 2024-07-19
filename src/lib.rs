@@ -3,7 +3,7 @@
 #![warn(missing_docs)]
 
 use std::{marker::PhantomData, sync::atomic::{AtomicU64, Ordering as AtomicOrdering}};
-use bevy::{ecs::schedule::{ScheduleLabel, SystemConfigs}, prelude::*, utils::intern::Interned};
+use bevy::{ecs::{intern::Interned, schedule::{ScheduleLabel, SystemConfigs}}, prelude::*};
 
 type Schedule = Interned<dyn ScheduleLabel>;
 
@@ -12,9 +12,8 @@ type Schedule = Interned<dyn ScheduleLabel>;
 pub trait ProgressType: Send + Sync + 'static {}
 impl<T> ProgressType for T where T: Send + Sync + 'static {}
 
-/// A simple progress tracker plugin.
-/// Runs the [`Done`] schedule when finished.
-pub struct ProgressTrackerPlugin<T: ProgressType> {
+/// A simple progress tracker plugin that runs the [`Done`] schedule on completion.
+pub struct ScheduleProgressTrackerPlugin<T: ProgressType> {
     /// The schedule where progress is checked to see if we need to finish.
     /// Set to [`Last`] by default.
     pub check_schedule: Schedule,
@@ -26,7 +25,7 @@ pub struct ProgressTrackerPlugin<T: ProgressType> {
     pub phantom: PhantomData<T>,
 }
 
-impl<T: ProgressType> Default for ProgressTrackerPlugin<T> {
+impl<T: ProgressType> Default for ScheduleProgressTrackerPlugin<T> {
     fn default() -> Self {
         Self {
             check_schedule: Last.intern(),
@@ -36,7 +35,7 @@ impl<T: ProgressType> Default for ProgressTrackerPlugin<T> {
     }
 }
 
-impl<T: ProgressType> Plugin for ProgressTrackerPlugin<T> {
+impl<T: ProgressType> Plugin for ScheduleProgressTrackerPlugin<T> {
     fn build(&self, app: &mut App) {
         app.init_schedule(Done::<T>::new());
         app.insert_resource(PluginConfig { remove_on_done: self.remove_on_done, phantom: PhantomData::<T> });
