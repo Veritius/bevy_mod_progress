@@ -180,7 +180,6 @@ impl<T: ?Sized> Progress<T> {
 
     fn done(&self) -> bool {
         let (done, total) = self.work();
-        if total == 0 { return false }
         return done >= total;
     }
 }
