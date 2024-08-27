@@ -8,7 +8,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(MainSchedulePlugin);
     app.add_plugins(ScheduleRunnerPlugin::default());
-    app.add_plugins(ProgressTrackingPlugin::<Loading>::default());
+    app.add_plugins(EntityProgressTrackingPlugin::<Loading>::default());
     app.add_systems(Update, tracking_system);
     app.world_mut().spawn(Progress::<Loading>::new());
     app.observe(completion_observer);

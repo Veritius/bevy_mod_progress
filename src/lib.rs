@@ -6,33 +6,26 @@ use std::marker::PhantomData;
 use bevy_app::prelude::*;
 use bevy_ecs::{prelude::*, schedule::{ScheduleLabel, InternedScheduleLabel}};
 
-/// Adds progress tracking for `T`.
-pub struct ProgressTrackingPlugin<T: ?Sized> {
+/// Adds progress tracking for `T` (as a resource).
+pub struct ResourceProgressTrackingPlugin<T: ?Sized> {
     /// The schedule in which the progress value is checked.
     pub check_schedule: InternedScheduleLabel,
-
-    /// Removes the progress tracker when the task completes.
-    pub remove_on_done: bool,
 
     _p1: PhantomData<T>,
 }
 
-impl<T: ?Sized> Default for ProgressTrackingPlugin<T> {
+impl<T: ?Sized> Default for ResourceProgressTrackingPlugin<T> {
     fn default() -> Self {
         Self {
             check_schedule: PostUpdate.intern(),
-            remove_on_done: true,
             _p1: PhantomData,
         }
     }
 }
 
-impl<T: Send + Sync + 'static> Plugin for ProgressTrackingPlugin<T> {
+impl<T: Send + Sync + 'static> Plugin for ResourceProgressTrackingPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.add_systems(self.check_schedule, (
-            resource_progress_check_system::<T>,
-            entity_progress_check_system::<T>,
-        ));
+        app.add_systems(self.check_schedule, resource_progress_check_system::<T>);
     }
 }
 
@@ -50,6 +43,29 @@ fn resource_progress_check_system<T: ?Sized + Send + Sync + 'static>(
         work: resource.total,
         _p1: PhantomData,
     });
+}
+
+/// Adds progress tracking for `T` (as a component).
+pub struct EntityProgressTrackingPlugin<T: ?Sized> {
+    /// The schedule in which the progress value is checked.
+    pub check_schedule: InternedScheduleLabel,
+
+    _p1: PhantomData<T>,
+}
+
+impl<T: ?Sized> Default for EntityProgressTrackingPlugin<T> {
+    fn default() -> Self {
+        Self {
+            check_schedule: PostUpdate.intern(),
+            _p1: PhantomData,
+        }
+    }
+}
+
+impl<T: Send + Sync + 'static> Plugin for EntityProgressTrackingPlugin<T> {
+    fn build(&self, app: &mut App) {
+        app.add_systems(self.check_schedule, entity_progress_check_system::<T>);
+    }
 }
 
 fn entity_progress_check_system<T: ?Sized + Send + Sync + 'static>(
