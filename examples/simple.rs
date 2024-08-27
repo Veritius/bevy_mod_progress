@@ -16,9 +16,9 @@ fn main() {
 }
 
 fn tracking_system(
-    tracked: Query<&Progress<Loading>>,
+    mut tracked: Query<&mut Progress<Loading>>,
 ) {
-    for tracker in &tracked {
+    for mut tracker in &mut tracked {
         tracker.track(128, 128);
     }
 }
