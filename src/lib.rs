@@ -38,8 +38,13 @@ impl<T: Send + Sync + 'static> Plugin for ProgressTrackingPlugin<T> {
 
 fn resource_progress_check_system<T: ?Sized + Send + Sync + 'static>(
     mut commands: Commands,
-    resource: Res<Progress<T>>,
+    resource: Option<Res<Progress<T>>>,
 ) {
+    let resource = match resource {
+        Some(v) => v,
+        None => return,
+    };
+
     if !resource.done() { return }
     commands.trigger(Done::<T> {
         work: resource.total,
