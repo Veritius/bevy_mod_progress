@@ -11,6 +11,10 @@ pub struct ResourceProgressTrackingPlugin<T: ?Sized> {
     /// The schedule in which the progress value is checked.
     pub check_schedule: InternedScheduleLabel,
 
+    /// The schedule in which the progress value is checked.
+    /// This should be the same as, or before, `check_schedule`.
+    pub reset_schedule: InternedScheduleLabel,
+
     _p1: PhantomData<T>,
 }
 
@@ -18,6 +22,7 @@ impl<T: ?Sized> Default for ResourceProgressTrackingPlugin<T> {
     fn default() -> Self {
         Self {
             check_schedule: PostUpdate.intern(),
+            reset_schedule: Last.intern(),
             _p1: PhantomData,
         }
     }
@@ -25,7 +30,12 @@ impl<T: ?Sized> Default for ResourceProgressTrackingPlugin<T> {
 
 impl<T: Send + Sync + 'static> Plugin for ResourceProgressTrackingPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.add_systems(self.check_schedule, resource_progress_check_system::<T>);
+        app.add_systems(self.check_schedule, resource_progress_check_system::<T>
+            .in_set(ProgressSystems::Check));
+
+        app.add_systems(self.reset_schedule, resource_progress_reset_system::<T>
+            .in_set(ProgressSystems::Reset)
+            .after(ProgressSystems::Check));
     }
 }
 
@@ -45,10 +55,23 @@ fn resource_progress_check_system<T: ?Sized + Send + Sync + 'static>(
     });
 }
 
+fn resource_progress_reset_system<T: ?Sized + Send + Sync + 'static>(
+    resource: Option<ResMut<Progress<T>>>,
+) {
+    if let Some(mut resource) = resource {
+        resource.done = 0;
+        resource.total = 0;
+    }
+}
+
 /// Adds progress tracking for `T` (as a component).
 pub struct EntityProgressTrackingPlugin<T: ?Sized> {
     /// The schedule in which the progress value is checked.
     pub check_schedule: InternedScheduleLabel,
+
+    /// The schedule in which the progress value is checked.
+    /// This should be the same as, or before, `check_schedule`.
+    pub reset_schedule: InternedScheduleLabel,
 
     _p1: PhantomData<T>,
 }
@@ -57,6 +80,7 @@ impl<T: ?Sized> Default for EntityProgressTrackingPlugin<T> {
     fn default() -> Self {
         Self {
             check_schedule: PostUpdate.intern(),
+            reset_schedule: Last.intern(),
             _p1: PhantomData,
         }
     }
@@ -64,7 +88,12 @@ impl<T: ?Sized> Default for EntityProgressTrackingPlugin<T> {
 
 impl<T: Send + Sync + 'static> Plugin for EntityProgressTrackingPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.add_systems(self.check_schedule, entity_progress_check_system::<T>);
+        app.add_systems(self.check_schedule, entity_progress_check_system::<T>
+            .in_set(ProgressSystems::Check));
+
+        app.add_systems(self.reset_schedule, entity_progress_reset_system::<T>
+            .in_set(ProgressSystems::Reset)
+            .after(ProgressSystems::Check));
     }
 }
 
@@ -79,6 +108,27 @@ fn entity_progress_check_system<T: ?Sized + Send + Sync + 'static>(
             _p1: PhantomData,
         }, [entity]);
     }
+}
+
+fn entity_progress_reset_system<T: ?Sized + Send + Sync + 'static>(
+    mut query: Query<&mut Progress<T>>,
+) {
+    for mut tracker in &mut query {
+        tracker.done = 0;
+        tracker.total = 0;
+    }
+}
+
+/// Systems involved in progress tracking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
+pub enum ProgressSystems {
+    /// System(s) that check for completed trackers.
+    /// All progress should be recorded before this point.
+    Check,
+
+    /// Progress trackers are reset in preparation for the next tick.
+    /// Progress should not be read after this point.
+    Reset,
 }
 
 /// Progress state.
