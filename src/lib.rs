@@ -3,247 +3,135 @@
 #![warn(missing_docs)]
 
 use std::{marker::PhantomData, sync::atomic::{AtomicU64, Ordering as AtomicOrdering}};
-use bevy::{ecs::{intern::Interned, schedule::{ScheduleLabel, SystemConfigs}}, prelude::*};
+use bevy_app::prelude::*;
+use bevy_ecs::{prelude::*, schedule::{ScheduleLabel, InternedScheduleLabel}};
 
-type Schedule = Interned<dyn ScheduleLabel>;
+/// Adds progress tracking for `T`.
+pub struct ProgressTrackingPlugin<T: ?Sized> {
+    /// The schedule in which the progress value is checked.
+    pub check_schedule: InternedScheduleLabel,
 
-/// Types that can be used in the progress tracker plugin as a distinguishing value.
-/// Automatically implemented for almost all types, so no need to worry about this.
-pub trait ProgressType: Send + Sync + 'static {}
-impl<T> ProgressType for T where T: Send + Sync + 'static {}
-
-/// A simple progress tracker plugin that runs the [`Done`] schedule on completion.
-pub struct ScheduleProgressTrackerPlugin<T: ProgressType> {
-    /// The schedule where progress is checked to see if we need to finish.
-    /// Set to [`Last`] by default.
-    pub check_schedule: Schedule,
-
-    /// Removes the [`OverallProgress`] resource when finished.
+    /// Removes the progress tracker when the task completes.
     pub remove_on_done: bool,
 
-    #[doc(hidden)]
-    pub phantom: PhantomData<T>,
+    _p1: PhantomData<T>,
 }
 
-impl<T: ProgressType> Default for ScheduleProgressTrackerPlugin<T> {
+impl<T: ?Sized> Default for ProgressTrackingPlugin<T> {
     fn default() -> Self {
         Self {
-            check_schedule: Last.intern(),
+            check_schedule: PostUpdate.intern(),
             remove_on_done: true,
-            phantom: PhantomData,
+            _p1: PhantomData,
         }
     }
 }
 
-impl<T: ProgressType> Plugin for ScheduleProgressTrackerPlugin<T> {
+impl<T: Send + Sync + 'static> Plugin for ProgressTrackingPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.init_schedule(Done::<T>::new());
-        app.insert_resource(PluginConfig { remove_on_done: self.remove_on_done, phantom: PhantomData::<T> });
-        app.add_systems(self.check_schedule, schedule_check_system::<T>);
+        app.add_systems(self.check_schedule, (
+            resource_progress_check_system::<T>,
+            entity_progress_check_system::<T>,
+        ));
     }
 }
 
-#[derive(Resource)]
-struct PluginConfig<T: ProgressType> {
-    remove_on_done: bool,
-    phantom: PhantomData<T>,
-}
-
-fn schedule_check_system<T: ProgressType>(
-    world: &mut World,
+fn resource_progress_check_system<T: ?Sized + Send + Sync + 'static>(
+    mut commands: Commands,
+    resource: ResMut<Progress<T>>,
 ) {
-    let res = match world.get_resource::<OverallProgress<T>>() {
-        Some(res) => res,
-        None => { return },
-    };
+    if !resource.done() { return }
+    commands.trigger(Done::<T> {
+        work: resource.tick_total.load(AtomicOrdering::Acquire),
+        _p1: PhantomData,
+    });
+}
 
-    if res.done() < res.required() { return }
-    world.run_schedule(Done::<T>::new());
-
-    if world.resource::<PluginConfig<T>>().remove_on_done {
-        world.remove_resource::<OverallProgress<T>>();
+fn entity_progress_check_system<T: ?Sized + Send + Sync + 'static>(
+    mut commands: Commands,
+    query: Query<(Entity, &mut Progress<T>)>,
+) {
+    for (entity, tracker) in &query {
+        if !tracker.done() { continue }
+        commands.trigger_targets(Done::<T> {
+            work: tracker.tick_done.load(AtomicOrdering::Acquire),
+            _p1: PhantomData,
+        }, [entity]);
     }
 }
 
-/// System set for systems that track progress.
-#[derive(SystemSet)]
-pub struct ProgressTrackingSet<T: ProgressType>(PhantomData<T>);
-
-impl<T: ProgressType> ProgressTrackingSet<T> {
-    /// An instance of the progress tracking set.
-    #[inline]
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: ProgressType> std::fmt::Debug for ProgressTrackingSet<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("ProgressTrackingSet<{}>", std::any::type_name::<T>()))
-    }
-}
-
-impl<T: ProgressType> Clone for ProgressTrackingSet<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: ProgressType> PartialEq for ProgressTrackingSet<T> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: ProgressType> Eq for ProgressTrackingSet<T> {}
-
-impl<T: ProgressType> std::hash::Hash for ProgressTrackingSet<T> {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-/// Schedule run when the progress tracker corresponding to `T` finishes.
-#[derive(ScheduleLabel)]
-pub struct Done<T: ProgressType>(PhantomData<T>);
-
-impl<T: ProgressType> Done<T> {
-    /// Makes a new instance of the schedule label.
-    #[inline]
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: ProgressType> std::fmt::Debug for Done<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("Done<{}>", std::any::type_name::<T>()))
-    }
-}
-
-impl<T: ProgressType> Clone for Done<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T: ProgressType> PartialEq for Done<T> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: ProgressType> Eq for Done<T> {}
-
-impl<T: ProgressType> std::hash::Hash for Done<T> {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-/// Progress reported by a system.
-#[derive(Debug, Clone, Default)]
-pub struct Progress {
-    /// The amount of work that has been done.
-    pub done: u32,
-    /// The amount of work that has to be done to progress.
-    pub required: u32,
-}
-
-impl Progress {
-    /// Records progress.
-    #[inline]
-    pub fn apply<T: ProgressType>(&self, overall: &OverallProgress<T>) {
-        overall.apply(self);
-    }
-}
-
-/// Overall recorded progress.
+/// Progress state.
 /// 
-/// This value can change partway through a system, even if accessed through a `Res`.
-#[derive(Resource)]
-pub struct OverallProgress<T: ProgressType>(OverallProgressInner, PhantomData<T>);
-
-impl<T: ProgressType> OverallProgress<T> {
-    /// Creates a new progress tracker.
-    /// Does nothing unless the plugin is also added.
-    #[inline]
-    pub fn new() -> Self {
-        Self(OverallProgressInner::default(), PhantomData)
-    }
-
-    /// Records progress.
-    #[inline]
-    pub fn apply(&self, progress: &Progress) {
-        self.0.apply(progress)
-    }
-
-    /// Returns how much progress is completed.
-    pub fn done(&self) -> u64 {
-        self.0.tick_done.load(AtomicOrdering::Acquire)
-    }
-
-    /// Returns how much progress needs to be done.
-    pub fn required(&self) -> u64 {
-        self.0.tick_total.load(AtomicOrdering::Acquire)
-    }
-}
-
-#[derive(Default)]
-struct OverallProgressInner {
+/// Uses atomics internally, and can be changed in parallel with immutable access.
+/// This means that, at any given point, regardless of immutability, a progress value can change.
+/// 
+/// Can be inserted as a [`Resource`] to track global progress,
+/// or as a [`Component`] to track progress for a single entity.
+#[derive(Component, Resource)]
+pub struct Progress<T: ?Sized> {
     tick_done: AtomicU64,
     tick_total: AtomicU64,
+    _p1: PhantomData<T>,
 }
 
-impl OverallProgressInner {
-    fn apply(&self, progress: &Progress) {
-        let done = progress.done.min(progress.required);
+impl<T: ?Sized> Progress<T> {
+    /// Creates a new [`Progress`] tracker.
+    pub fn new() -> Self {
+        Self {
+            tick_done: AtomicU64::new(0),
+            tick_total: AtomicU64::new(0),
+            _p1: PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> Default for Progress<T> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: ?Sized> Progress<T> {
+    /// Records a system's progress, including its total work and done work.
+    /// This must be done every tick.
+    pub fn track(&self, done: u32, total: u32) {
         self.tick_done.store(done.into(), AtomicOrdering::Release);
-        self.tick_total.store(progress.required.into(), AtomicOrdering::Release);
+        self.tick_total.store(total.into(), AtomicOrdering::Release);
+    }
+
+    /// Returns the work that has been completed and the units of work 
+    pub fn work(&self) -> (u64, u64) {
+        (
+            self.tick_done.load(AtomicOrdering::Acquire),
+            self.tick_total.load(AtomicOrdering::Acquire),
+        )
+    }
+
+    /// Returns the progress as a fraction, from `0.0` (no work done) to `1.0` (all work done).
+    /// This value can change during usage due to being based on atomics. If this is undesirable, use `&mut Progress<T>` in your query.
+    pub fn fract(&self) -> f32 {
+        let (done, total) = self.work();
+        return done as f32 / total as f32;
+    }
+
+    fn done(&self) -> bool {
+        let (done, total) = self.work();
+        return done >= total;
     }
 }
 
-/// Extension trait for systems that output [`Progress`] to record their progress.
-pub trait ProgressTrackerSystem<Params>: IntoSystem<(), Progress, Params> {
-    /// Records progress when the system finishes.
-    fn track_progress<T: ProgressType>(self) -> SystemConfigs;
+/// An observer event raised when a progress tracker completes.
+#[derive(Event)]
+pub struct Done<T: ?Sized> {
+    work: u64,
+    _p1: PhantomData<T>,
 }
 
-impl<S: IntoSystem<(), Progress, Params>, Params> ProgressTrackerSystem<Params> for S {
-    fn track_progress<T: ProgressType>(self) -> SystemConfigs {
-        self.pipe(|In(progress): In<Progress>, overall: Option<Res<OverallProgress<T>>>| {
-            match overall {
-                Some(overall) => {
-                    progress.apply(&overall);
-                },
-                None => { return }, // Do nothing.
-            }
-        }).in_set(ProgressTrackingSet::<T>::new())
+impl<T: ?Sized> Done<T> {
+    /// Returns the amount of work done.
+    #[inline]
+    pub fn work(&self) -> u64 {
+        self.work
     }
-}
-
-/// Returns a [`Condition`]-satisfying closure that will return `true` if `T` is being tracked.
-pub fn currently_tracking<T: ProgressType>() -> impl Fn(Option<Res<OverallProgress<T>>>) -> bool + Clone {
-    |res| { res.is_some() }
-}
-
-/// Adds [`OverallProgress<T>`] to the World, allowing it to be tracked.
-pub fn start_tracking<T: ProgressType>(
-    mut commands: Commands,
-) {
-    commands.insert_resource(OverallProgress::<T>::new());
-}
-
-
-/// Removes [`OverallProgress<T>`] to the World, stopping tracking.
-pub fn stop_tracking<T: ProgressType>(
-    mut commands: Commands,
-) {
-    commands.remove_resource::<OverallProgress<T>>();
 }
