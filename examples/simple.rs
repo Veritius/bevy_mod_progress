@@ -24,7 +24,7 @@ fn tracking_system(
 }
 
 fn completion_observer(
-    _trigger: Trigger<Done<Progress<Loading>>>,
+    _trigger: Trigger<Done<Loading>>,
     mut exit: EventWriter<AppExit>,
 ) {
     exit.send(AppExit::Success);
